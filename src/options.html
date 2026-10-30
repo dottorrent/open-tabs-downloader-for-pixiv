@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>标签文件夹规则</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <img class="mark" src="icons/icon.svg" alt="">
+        <div>
+          <h1 data-i18n="optionsTitle">标签文件夹规则</h1>
+          <p id="extensionName">Pixiv 已打开作品下载器</p>
+        </div>
+        <select id="languageSelect" class="lang-select" data-i18n-title="languageLabel" data-i18n-aria-label="languageLabel" title="语言" aria-label="语言">
+          <option value="auto" data-i18n="languageAuto">跟随浏览器</option>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </header>
+
+      <section class="explain">
+        <p data-i18n-html="explainSave">作品带有规则里的任一标签时，图片平铺保存到 <code>Pixiv/文件夹/</code>；没有命中任何规则的作品按弹窗里的原有方式保存。</p>
+        <p data-i18n-html="explainMatch">规则<strong>从上到下</strong>匹配，命中第一条即停止，可用 ↑ ↓ 调整优先级。标签会同时和 Pixiv 原始标签及其译名比较，忽略大小写、全角半角和空格。文件夹可以用 <code>/</code> 写多级，例如 <code>原神/角色</code>。</p>
+      </section>
+
+      <ol id="ruleList"></ol>
+      <p id="empty" class="empty hidden" data-i18n="emptyRules">还没有规则。点击下面的按钮添加，或在弹窗里直接点击作品的标签。</p>
+
+      <div class="actions">
+        <button id="addRule" type="button" data-i18n="addRule">添加规则</button>
+        <span id="status" aria-live="polite"></span>
+      </div>
+
+      <p class="disclaimer" data-i18n="disclaimerFull">免责声明：本扩展只是帮你保存自己在 Pixiv 上能够查看的作品，不是 Pixiv 官方产品。作品的著作权归原作者所有，下载的内容仅供个人欣赏与收藏；转载、二次发布或商业使用前，请先取得作者授权，并遵守 Pixiv 使用条款。因使用本扩展产生的版权纠纷，由使用者自行承担。</p>
+
+      <section class="backup">
+        <h2 data-i18n="backupTitle">备份</h2>
+        <p data-i18n-html="backupText">卸载扩展会清空规则，建议定期导出。导入会<strong>替换</strong>当前全部规则。</p>
+        <div class="row">
+          <button id="exportRules" class="secondary" type="button" data-i18n="exportJson">导出为 JSON</button>
+          <label class="file secondary"><span data-i18n="importJson">导入 JSON</span><input id="importRules" type="file" accept="application/json,.json"></label>
+        </div>
+      </section>
+    </main>
+    <script src="i18n.js"></script>
+    <script src="lib.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

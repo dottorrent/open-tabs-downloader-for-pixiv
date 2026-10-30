@@ -1,0 +1,10 @@
+# 打包输出（node build.js 可随时重新生成）
+dist/
+*.xpi
+
+# 系统与编辑器生成的文件
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/

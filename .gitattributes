@@ -1,0 +1,3 @@
+# 所有文本文件在仓库和工作区都用 LF 换行，不随 Windows 的 autocrlf 设置变化
+* text=auto eol=lf
+*.svg text eol=lf

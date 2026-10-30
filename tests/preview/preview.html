@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<!-- 预览用：在普通网页里加载 src/ 下的 popup 或 options，并注入模拟的 chrome API。 -->
+<script>
+(async () => {
+  const page = new URLSearchParams(location.search).get("page") || "popup";
+  const tag = "scr" + "ipt";
+  let html = await (await fetch(`../../src/${page}.html`)).text();
+  html = html.replace("<head>", '<head><base href="../../src/">')
+    .replace(`<${tag} src="lib.js">`, `<${tag} src="../tests/preview/chrome-mock.js"></${tag}><${tag} src="lib.js">`);
+  if (page === "popup") html = html.replace("</head>", "<style>body{border:1px solid #ccd;margin:16px}</style></head>");
+  document.open();
+  document.write(html);
+  document.close();
+})();
+</script>

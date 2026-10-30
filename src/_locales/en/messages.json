@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Pixiv Open Tabs Downloader",
+    "description": "Extension name shown in the add-ons manager and the store"
+  },
+  "extensionDescription": {
+    "message": "Download the original images of every open pixiv artwork tab, sorted into folders by tag, with tags written into image metadata.",
+    "description": "Short description shown in the add-ons manager"
+  },
+  "actionTitle": {
+    "message": "Download open pixiv artworks",
+    "description": "Tooltip of the toolbar button"
+  }
+}

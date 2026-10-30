@@ -1,0 +1,53 @@
+{
+  "manifest_version": 2,
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "version": "1.15.0",
+  "permissions": [
+    "tabs",
+    "downloads",
+    "storage",
+    "webRequest",
+    "webRequestBlocking",
+    "https://www.pixiv.net/*",
+    "https://*.pximg.net/*"
+  ],
+  "background": {
+    "scripts": [
+      "i18n.js",
+      "lib.js",
+      "ugoira.js",
+      "metadata.js",
+      "firefox-referer.js",
+      "background.js"
+    ]
+  },
+  "browser_action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_popup": "popup.html",
+    "default_icon": "icons/icon.svg"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "pixiv-open-tabs-downloader@local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  }
+}

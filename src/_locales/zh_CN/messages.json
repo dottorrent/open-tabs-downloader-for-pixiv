@@ -1,0 +1,14 @@
+{
+  "extensionName": {
+    "message": "Pixiv 已打开作品下载器",
+    "description": "Extension name shown in the add-ons manager and the store"
+  },
+  "extensionDescription": {
+    "message": "扫描所有已打开的 Pixiv 作品标签页并下载原图，可按标签分文件夹、写入标签等元数据、跳过尺寸过小的图片。",
+    "description": "Short description shown in the add-ons manager"
+  },
+  "actionTitle": {
+    "message": "下载已打开的 Pixiv 作品",
+    "description": "Tooltip of the toolbar button"
+  }
+}

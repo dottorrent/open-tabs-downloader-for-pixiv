@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pixiv 已打开作品下载器</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <img class="mark" src="icons/icon.svg" alt="">
+        <div>
+          <h1 data-i18n="headerTitle">Pixiv 作品下载</h1>
+          <p id="headerSubtitle" data-i18n="headerSubtitle">扫描当前浏览器的所有窗口</p>
+        </div>
+        <select id="languageSelect" class="lang-select" data-i18n-title="languageLabel" data-i18n-aria-label="languageLabel" title="语言" aria-label="语言">
+          <option value="auto" data-i18n="languageAuto">跟随浏览器</option>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </header>
+
+      <!-- 任务状态卡片：进行中或有上次结果时显示在最上面，重新打开弹窗第一眼就能看到 -->
+      <section id="progress" class="task-card hidden" aria-live="polite">
+        <div class="task-head">
+          <strong id="taskTitle">下载进行中</strong>
+          <button id="openWindow" class="link" type="button" data-i18n="openWindow">在独立窗口中查看</button>
+          <button id="dismissTask" class="dismiss hidden" type="button" data-i18n-title="dismissResult" data-i18n-aria-label="dismissResult" title="关闭这条结果" aria-label="关闭这条结果">×</button>
+        </div>
+        <div class="bar"><span id="barFill"></span></div>
+        <p id="progressText"></p>
+
+        <details id="errors" class="hidden" open>
+          <summary data-i18n="failuresTitle">失败项</summary>
+          <ul id="errorList"></ul>
+        </details>
+        <button id="retryFailed" class="retry hidden" type="button" data-i18n="retryFailed">重试失败项</button>
+
+        <details id="warnings" class="hidden">
+          <summary data-i18n="warningsTitle">元数据未完整写入</summary>
+          <ul id="warningList"></ul>
+        </details>
+
+        <details id="skipped" class="hidden">
+          <summary data-i18n="skippedTitle">已跳过的小图</summary>
+          <ul id="skippedList"></ul>
+        </details>
+      </section>
+
+      <section class="summary" aria-live="polite">
+        <strong id="count">正在扫描…</strong>
+        <span id="detail">请稍候</span>
+      </section>
+
+      <section id="artworks" class="artworks hidden">
+        <div class="section-head">
+          <span data-i18n="artworksHeading">作品与保存位置</span>
+          <button id="openRules" class="link" type="button" data-i18n="manageRules">管理标签规则</button>
+        </div>
+        <p class="hint" data-i18n="artworksHint">点击标签可把它归入一个文件夹（会保存为规则）；下拉框可临时改变单个作品的去向。</p>
+        <ul id="artworkList"></ul>
+      </section>
+
+      <fieldset id="rootOptions">
+        <legend data-i18n="saveLocationLegend">保存位置</legend>
+        <div class="root-row">
+          <label for="downloadRoot" data-i18n="saveFolderLabel">保存到</label>
+          <span class="root-prefix"><span data-i18n="downloadsDir">下载目录</span>/</span>
+          <input id="downloadRoot" type="text" value="Pixiv" spellcheck="false" data-i18n-placeholder="rootEmptyPlaceholder" placeholder="留空则直接存到下载目录">
+          <button id="showDownloads" class="link" type="button" data-i18n="openDownloadsFolder">打开下载目录</button>
+        </div>
+        <p class="path-note" data-i18n="saveLocationNote">扩展只能把文件存进 Firefox 的下载目录。想存到其他磁盘或文件夹，请在 Firefox 设置里修改默认下载目录。</p>
+      </fieldset>
+
+      <fieldset id="folderOptions">
+        <legend data-i18n="folderLegend">未命中标签规则的作品</legend>
+        <label>
+          <input type="radio" name="folderMode" value="artwork" checked>
+          <span><strong data-i18n="folderPerArtwork">每个作品单独文件夹</strong><small data-i18n="folderPerArtworkPath">Pixiv/作品ID - 标题/图片</small></span>
+        </label>
+        <label>
+          <input type="radio" name="folderMode" value="flat">
+          <span><strong data-i18n="folderFlat">全部放在同一文件夹</strong><small data-i18n="folderFlatPath">Pixiv/所有图片</small></span>
+        </label>
+        <p class="path-note" data-i18n-html="pathNoteRules">命中标签规则的作品统一平铺保存到 <code>Pixiv/规则文件夹/</code>。</p>
+      </fieldset>
+
+      <details id="metadataPanel" class="panel">
+        <summary><span data-i18n="metadataTitle">图片元数据</span><small id="metadataSummary"></small></summary>
+        <fieldset id="metadataOptions">
+        <label>
+          <input id="embedMetadata" type="checkbox" checked>
+          <span><strong data-i18n="metadataOption">写入标签、作者和作品链接</strong><small data-i18n="metadataOptionHint">资源管理器“属性 → 详细信息”中显示为 标记 / 作者 / 备注</small></span>
+        </label>
+        </fieldset>
+      </details>
+
+      <details id="sizePanel" class="panel">
+        <summary><span data-i18n="sizeTitle">尺寸筛选</span><small id="sizeSummary"></small></summary>
+        <fieldset id="sizeOptions">
+        <div class="size-tabs" role="tablist">
+          <button class="size-tab active" type="button" role="tab" data-kind="image"><span data-i18n="sizeTabImage">静态图片</span><small data-summary="image"></small></button>
+          <button class="size-tab" type="button" role="tab" data-kind="ugoira"><span data-i18n="sizeTabUgoira">动图</span><small data-summary="ugoira"></small></button>
+        </div>
+        <div class="size-block" data-kind="image">
+          <label>
+            <input class="size-enabled" type="checkbox">
+            <span><strong data-i18n="sizeSkipImages">跳过尺寸过小的静态图片</strong><small data-i18n="sizeSkipImagesHint">多页作品按页判断；跳过的图片不下载，也不算失败</small></span>
+          </label>
+          <div class="size-row">
+            <input class="size-width" type="number" min="1" step="1" value="1920" data-i18n-aria-label="width" aria-label="宽">
+            <span>×</span>
+            <input class="size-height" type="number" min="1" step="1" value="1080" data-i18n-aria-label="height" aria-label="高">
+          </div>
+          <label>
+            <input type="radio" name="sizeMode-image" value="dimensions" checked>
+            <span><strong data-i18n="modeDimensions">长边和短边都要达到</strong><small class="dimensions-hint"></small></span>
+          </label>
+          <label>
+            <input type="radio" name="sizeMode-image" value="pixels">
+            <span><strong data-i18n="modePixels">总像素数要达到</strong><small class="pixels-hint"></small></span>
+          </label>
+        </div>
+        <div class="size-block hidden" data-kind="ugoira">
+          <label>
+            <input class="size-enabled" type="checkbox">
+            <span><strong data-i18n="sizeSkipUgoira">跳过尺寸过小的动图</strong><small data-i18n="sizeSkipUgoiraHint">按动图本身的尺寸判断；选了多种格式时一起跳过</small></span>
+          </label>
+          <div class="size-row">
+            <input class="size-width" type="number" min="1" step="1" value="1920" data-i18n-aria-label="width" aria-label="宽">
+            <span>×</span>
+            <input class="size-height" type="number" min="1" step="1" value="1080" data-i18n-aria-label="height" aria-label="高">
+          </div>
+          <label>
+            <input type="radio" name="sizeMode-ugoira" value="dimensions" checked>
+            <span><strong data-i18n="modeDimensions">长边和短边都要达到</strong><small class="dimensions-hint"></small></span>
+          </label>
+          <label>
+            <input type="radio" name="sizeMode-ugoira" value="pixels">
+            <span><strong data-i18n="modePixels">总像素数要达到</strong><small class="pixels-hint"></small></span>
+          </label>
+        </div>
+        </fieldset>
+      </details>
+
+      <details id="ugoiraPanel" class="panel">
+        <summary><span data-i18n="ugoiraTitle">动图格式</span><small id="ugoiraSummary"></small></summary>
+        <fieldset id="ugoiraOptions">
+        <div class="format-head">
+          <small id="ugoiraHint">可多选，每种格式各存一个文件</small>
+          <button id="ugoiraAll" class="link" type="button" data-i18n="selectAll">全选</button>
+        </div>
+        <label>
+          <input type="checkbox" name="ugoiraFormat" value="gif" checked>
+          <span><strong data-i18n="formatGif">GIF（默认）</strong><small data-i18n="formatGifHint">兼容性最好；最多 256 色（已用专属调色板优化）</small></span>
+        </label>
+        <label>
+          <input type="checkbox" name="ugoiraFormat" value="apng">
+          <span><strong>APNG</strong><small data-i18n="formatApngHint">无损、全彩色，浏览器可播放；部分看图软件只显示第一帧，文件较大</small></span>
+        </label>
+        <label>
+          <input type="checkbox" name="ugoiraFormat" value="zip">
+          <span><strong data-i18n="formatZip">原始帧压缩包</strong><small data-i18n="formatZipHint">Pixiv 原始帧 + animation.json（帧时长、标签、作者、链接），不转换</small></span>
+        </label>
+        </fieldset>
+      </details>
+
+      <button id="download" type="button" disabled data-i18n="downloadAll">下载所有已打开作品</button>
+      <button id="rescan" class="secondary" type="button" data-i18n="rescan">重新扫描</button>
+
+      <footer>
+        <p data-i18n="footerSaved">保存位置：下载目录/Pixiv/</p>
+        <p class="disclaimer" data-i18n="disclaimerShort">免责声明：作品版权归原作者所有，下载内容仅供个人欣赏与收藏；转载、二次发布或商用前请先取得作者授权，并遵守 Pixiv 使用条款。本扩展不是 Pixiv 官方产品。</p>
+      </footer>
+    </main>
+    <datalist id="folderChoices"></datalist>
+    <script src="i18n.js"></script>
+    <script src="lib.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
