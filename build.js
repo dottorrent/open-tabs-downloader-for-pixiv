@@ -1,10 +1,14 @@
 "use strict";
 
-// 把 src/ 打包成未签名的 xpi，分“私人版”和“公开版”两个版本：
-//   node build.js            两个版本都打包
-//   node build.js public     只打包公开版
-// 两个版本共用同一份源码，差异只在打包时套用（见 EDITIONS）。
-// Firefox 要求 zip 内路径使用 "/"，所以这里自己写 zip，不依赖 Compress-Archive。
+// 把 src/ 打包成未签名的安装包。两个维度：
+//   版本（EDITIONS）：private 私人版 / public 公开版，名称和 ID 不同。
+//   浏览器（TARGETS）：firefox（Manifest V2，.xpi）/ chrome（Manifest V3，.zip，Chrome 和 Edge 通用）。
+//   node build.js                    全部打包（2 个版本 × 2 种浏览器）
+//   node build.js public             只打包公开版（两种浏览器）
+//   node build.js chrome             只打包 Chrome/Edge（两个版本）
+//   node build.js public firefox     只打包公开版的 Firefox 安装包
+// 所有版本共用同一份源码；src/chrome/ 里是 Chrome/Edge 专用文件，打包时放到安装包根目录。
+// 浏览器要求 zip 内路径使用 "/"，所以这里自己写 zip，不依赖 Compress-Archive。
 const fs = require("node:fs");
 const path = require("node:path");
 const zlib = require("node:zlib");
@@ -34,15 +38,57 @@ const EDITIONS = {
       result.browser_specific_settings.gecko.id = "{834e8355-938e-4b17-b870-17a16a64c422}";
       return result;
     },
-    // 名称和简介写在 _locales 里，管理页和商店按浏览器语言显示。
+    // 名称和简介写在 _locales 里，管理页和商店按浏览器语言显示。Chrome 要求简介不超过 132 个字符。
     messages: {
       en: {
         extensionName: "Open Tabs Downloader for Pixiv",
-        extensionDescription: "Download the original images of every open pixiv artwork tab: folders by tag, tags written into image metadata, size filter, animations as GIF / APNG / original frames. Not made by pixiv."
+        extensionDescription: "Download originals of every open pixiv artwork tab: tag folders, image metadata, size filter, GIF/APNG animations. Not by pixiv."
       },
       zh_CN: PUBLIC_ZH,
       zh_TW: PUBLIC_ZH
     }
+  }
+};
+
+const CHROME_ICONS = { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" };
+
+// Chrome / Edge 只接受 Manifest V3：后台改为 service worker，Referer 改用 declarativeNetRequest，
+// 图标用 PNG，去掉 Firefox 专用的 browser_specific_settings。
+function chromeManifest(source) {
+  return {
+    manifest_version: 3,
+    name: source.name,
+    description: source.description,
+    default_locale: source.default_locale,
+    version: source.version,
+    icons: CHROME_ICONS,
+    permissions: ["tabs", "downloads", "storage", "declarativeNetRequest", "offscreen"],
+    host_permissions: source.permissions.filter((permission) => permission.includes("://")),
+    background: { service_worker: "background-sw.js" },
+    action: {
+      default_title: source.browser_action.default_title,
+      default_popup: source.browser_action.default_popup,
+      default_icon: CHROME_ICONS
+    },
+    options_ui: source.options_ui,
+    minimum_chrome_version: "116"
+  };
+}
+
+const TARGETS = {
+  firefox: {
+    extension: "unsigned.xpi",
+    manifest: (manifest) => manifest,
+    // src/chrome/ 里的文件只属于 Chrome/Edge。
+    include: (name) => !name.startsWith("chrome/"),
+    rename: (name) => name
+  },
+  chrome: {
+    extension: "chrome.zip",
+    manifest: chromeManifest,
+    // Firefox 用 webRequest 改 Referer 的脚本在 Chrome 里不需要（也不允许）。
+    include: (name) => name !== "firefox-referer.js",
+    rename: (name) => (name.startsWith("chrome/") ? name.slice("chrome/".length) : name)
   }
 };
 
@@ -118,13 +164,16 @@ function localizedName(entries, locale) {
   return entry ? JSON.parse(entry.data.toString("utf8")).extensionName.message : "";
 }
 
-// 返回某个版本的全部文件内容（不写盘），供打包和测试使用。
-function editionFiles(editionName) {
+// 返回某个版本、某种浏览器的全部文件内容（不写盘），供打包和测试使用。
+function editionFiles(editionName, targetName = "firefox") {
   const edition = EDITIONS[editionName];
   if (!edition) throw new Error(`未知版本：${editionName}（可选 ${Object.keys(EDITIONS).join(" / ")}）`);
-  const manifest = edition.manifest(JSON.parse(fs.readFileSync(path.join(SRC, "manifest.json"), "utf8")));
-  const entries = listFiles(SRC).map((name) => {
-    let data = fs.readFileSync(path.join(SRC, name));
+  const target = TARGETS[targetName];
+  if (!target) throw new Error(`未知浏览器：${targetName}（可选 ${Object.keys(TARGETS).join(" / ")}）`);
+  const manifest = target.manifest(edition.manifest(JSON.parse(fs.readFileSync(path.join(SRC, "manifest.json"), "utf8"))));
+  const entries = listFiles(SRC).filter(target.include).map((sourceName) => {
+    const name = target.rename(sourceName);
+    let data = fs.readFileSync(path.join(SRC, sourceName));
     if (name === "manifest.json") data = Buffer.from(JSON.stringify(manifest, null, 2) + "\n");
     const locale = name.match(/^_locales\/([^/]+)\/messages\.json$/);
     if (locale && edition.messages[locale[1]]) {
@@ -133,26 +182,32 @@ function editionFiles(editionName) {
       data = Buffer.from(JSON.stringify(messages, null, 2) + "\n");
     }
     return { name, data };
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name));
   // 许可证放在项目根目录（开源仓库的惯例），打包时一并放进安装包。
   entries.push({ name: "LICENSE", data: fs.readFileSync(path.join(__dirname, "LICENSE")) });
   return { manifest, entries, names: { en: localizedName(entries, "en"), zh: localizedName(entries, "zh_CN") } };
 }
 
-function buildEdition(editionName, outDir = DIST) {
-  const { manifest, entries, names } = editionFiles(editionName);
+function buildEdition(editionName, outDir = DIST, targetName = "firefox") {
+  const { manifest, entries, names } = editionFiles(editionName, targetName);
   fs.mkdirSync(outDir, { recursive: true });
-  const output = path.join(outDir, `${EDITIONS[editionName].filePrefix}-${manifest.version}-${editionName}-unsigned.xpi`);
+  const output = path.join(outDir, `${EDITIONS[editionName].filePrefix}-${manifest.version}-${editionName}-${TARGETS[targetName].extension}`);
   fs.writeFileSync(output, buildZip(entries));
   return { output, manifest, names, files: entries.map((entry) => entry.name) };
 }
 
-module.exports = { EDITIONS, editionFiles, buildEdition };
+module.exports = { EDITIONS, TARGETS, editionFiles, buildEdition };
 
 if (require.main === module) {
-  const requested = process.argv.slice(2);
-  for (const editionName of requested.length ? requested : Object.keys(EDITIONS)) {
-    const { output, manifest, names, files } = buildEdition(editionName);
-    console.log(`[${editionName}] ${names.zh} / ${names.en} ${manifest.version}\n  ${output}\n  ${files.length} files`);
+  const args = process.argv.slice(2);
+  const unknown = args.filter((arg) => !EDITIONS[arg] && !TARGETS[arg]);
+  if (unknown.length) throw new Error(`未知参数：${unknown.join(" ")}`);
+  const editions = args.filter((arg) => EDITIONS[arg]);
+  const targets = args.filter((arg) => TARGETS[arg]);
+  for (const editionName of editions.length ? editions : Object.keys(EDITIONS)) {
+    for (const targetName of targets.length ? targets : Object.keys(TARGETS)) {
+      const { output, manifest, names, files } = buildEdition(editionName, DIST, targetName);
+      console.log(`[${editionName} / ${targetName}] ${names.zh} / ${names.en} ${manifest.version}\n  ${output}\n  ${files.length} files`);
+    }
   }
 }

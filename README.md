@@ -3,8 +3,8 @@
 <h1 align="center">Open Tabs Downloader for Pixiv</h1>
 
 <p align="center">
-  A Firefox extension that downloads the original images of every pixiv artwork tab you have open.<br>
-  一个 Firefox 扩展：一键下载浏览器里所有已打开的 Pixiv 作品页原图。
+  A Firefox, Chrome and Edge extension that downloads the original images of every pixiv artwork tab you have open.<br>
+  一个 Firefox / Chrome / Edge 扩展：一键下载浏览器里所有已打开的 Pixiv 作品页原图。
 </p>
 
 <p align="center">
@@ -32,11 +32,11 @@
 
 ### Usage
 
-1. Log in to pixiv in Firefox.
+1. Log in to pixiv in your browser.
 2. Open the artwork pages you want to keep (`pixiv.net/artworks/12345`).
 3. Click the toolbar button, check where each artwork will be saved, and click **Download all open artworks**.
 
-Firefox only lets extensions save inside its download folder. To save to another drive, change Firefox's default download folder in its settings.
+Browsers only let extensions save inside their download folder. To save to another drive, change the browser's default download folder in its settings.
 
 ### Development
 
@@ -44,10 +44,13 @@ Uses [Node.js](https://nodejs.org/) (tested with Node.js 24). There are no depen
 
 ```bash
 node --test tests/*.test.js   # run the tests
-node build.js public          # build dist/open-tabs-downloader-for-pixiv-<version>-public-unsigned.xpi
+node build.js public          # build the Firefox .xpi and the Chrome/Edge .zip into dist/
+node build.js public chrome   # Chrome/Edge only
 ```
 
-To try an unsigned build, open `about:debugging` → This Firefox → **Load Temporary Add-on…** and pick the `.xpi`, or install it in Firefox Developer Edition with `xpinstall.signatures.required` set to `false`.
+**Chrome / Edge**: unzip the `-chrome.zip`, open `chrome://extensions` or `edge://extensions`, turn on Developer mode and choose **Load unpacked**. Publishing notes are in [store/chrome-notes.md](store/chrome-notes.md).
+
+**Firefox**: to try an unsigned build, open `about:debugging` → This Firefox → **Load Temporary Add-on…** and pick the `.xpi`, or install it in Firefox Developer Edition with `xpinstall.signatures.required` set to `false`.
 
 `build.js` produces two editions from the same `src/`: **public** (the one on Firefox Add-ons) and **private** (the author's self-distributed copy, with a different name and add-on ID). Implementation notes (in Chinese) are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
@@ -78,11 +81,11 @@ Artworks belong to their creators. Downloads are for personal viewing and collec
 
 ### 使用方法
 
-1. 在 Firefox 里登录 Pixiv。
+1. 在浏览器里登录 Pixiv。
 2. 打开想保存的作品页（形如 `pixiv.net/artworks/12345`）。
 3. 点工具栏按钮，确认每个作品的保存位置，再点“下载所有已打开作品”。
 
-Firefox 只允许扩展把文件存进它的下载目录。想存到其他磁盘，请在 Firefox 设置里修改默认下载目录。
+浏览器只允许扩展把文件存进它的下载目录。想存到其他磁盘，请在浏览器设置里修改默认下载目录。
 
 ### 开发
 
@@ -90,10 +93,13 @@ Firefox 只允许扩展把文件存进它的下载目录。想存到其他磁盘
 
 ```bash
 node --test tests/*.test.js   # 运行测试
-node build.js public          # 打包到 dist/open-tabs-downloader-for-pixiv-<版本>-public-unsigned.xpi
+node build.js public          # 打包 Firefox 的 .xpi 和 Chrome/Edge 的 .zip 到 dist/
+node build.js public chrome   # 只打包 Chrome/Edge
 ```
 
-未签名的安装包可以在 `about:debugging` →“此 Firefox”→“临时载入附加组件”里加载；也可以在 Firefox Developer Edition 里把 `xpinstall.signatures.required` 设为 `false` 后直接安装。
+**Chrome / Edge**：把 `-chrome.zip` 解压，打开 `chrome://extensions` 或 `edge://extensions`，开启“开发者模式”，点“加载解压缩的扩展”。上架说明见 [store/chrome-notes.md](store/chrome-notes.md)。
+
+**Firefox**：未签名的安装包可以在 `about:debugging` →“此 Firefox”→“临时载入附加组件”里加载；也可以在 Firefox Developer Edition 里把 `xpinstall.signatures.required` 设为 `false` 后直接安装。
 
 `build.js` 用同一份 `src/` 打出两个版本：**公开版**（商店上架的版本）和**私人版**（作者自用，名称和扩展 ID 不同）。各功能的实现说明见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 

@@ -726,7 +726,7 @@ downloadRootInput.addEventListener("change", () => {
   applyLanguage();
 });
 
-// 打开 Firefox 的下载目录，确认文件实际存到了哪里（Android 没有这个接口时隐藏按钮）。
+// 打开浏览器的下载目录，确认文件实际存到了哪里（Android 没有这个接口时隐藏按钮）。
 if (chrome.downloads && typeof chrome.downloads.showDefaultFolder === "function") {
   showDownloadsButton.addEventListener("click", () => chrome.downloads.showDefaultFolder());
 } else {

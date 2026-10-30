@@ -185,7 +185,7 @@ function createHarness(storedRules, hooks = {}) {
   }
   context.globalThis = context;
   vm.createContext(context);
-  for (const file of hooks.ugoira ? ["i18n.js", "lib.js", "ugoira.js", "metadata.js", "background.js"] : ["i18n.js", "lib.js", "metadata.js", "background.js"]) {
+  for (const file of hooks.ugoira ? ["i18n.js", "lib.js", "ugoira.js", "metadata.js", "prepare.js", "background.js"] : ["i18n.js", "lib.js", "metadata.js", "prepare.js", "background.js"]) {
     vm.runInContext(fs.readFileSync(path.join(SRC, file), "utf8"), context, { filename: file });
   }
 

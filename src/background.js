@@ -1,4 +1,4 @@
-/* global chrome, PixivDownloaderUtils, PixivUgoira, PixivMetadata, PixivI18n */
+/* global chrome, PixivDownloaderUtils, PixivPrepare, PixivI18n */
 "use strict";
 
 // 失败原因等提示按界面语言生成；语言设置在弹窗或规则页修改后会通过 storage 事件同步过来。
@@ -17,6 +17,7 @@ const {
   passesSizeFilter,
   normalizeDownloadRoot
 } = PixivDownloaderUtils;
+const { taskError, httpError } = PixivPrepare;
 const API_ROOT = "https://www.pixiv.net/ajax/illust";
 const RULES_KEY = "tagRules";
 const INFO_TTL = 10 * 60 * 1000;
@@ -36,21 +37,6 @@ function normalizeUgoiraFormats(formats) {
   return chosen.length ? chosen : ["gif"];
 }
 
-// 同一个动图选了多种格式时，原始压缩包只下载一次，各格式共用；该作品处理完就释放。
-const ugoiraArchives = new Map();
-
-function getUgoiraArchive(url) {
-  if (!ugoiraArchives.has(url)) {
-    const promise = PixivUgoira.fetchArchive(url);
-    ugoiraArchives.set(url, promise);
-    promise.catch(() => ugoiraArchives.delete(url));
-  }
-  return ugoiraArchives.get(url);
-}
-
-function releaseUgoiraArchive(url) {
-  ugoiraArchives.delete(url);
-}
 const RETRY_ROUND_DELAY = 10 * 1000;
 
 // 预览和下载都要用作品信息，缓存起来避免重复请求 Pixiv。
@@ -78,18 +64,6 @@ function freshState() {
     startedAt: null,
     finishedAt: null
   };
-}
-
-// retriable === false 表示重试也不会成功（作品已删除、磁盘错误等）。
-function taskError(message, retriable, status) {
-  const error = new Error(message);
-  error.retriable = retriable;
-  if (status) error.status = status;
-  return error;
-}
-
-function httpError(label, status) {
-  return taskError(t("httpError", { label, status }), status === 408 || status === 429 || status >= 500, status);
 }
 
 function isRetriable(error) {
@@ -178,99 +152,44 @@ function recordWarning(file, message) {
   state.warnings.push({ id: file.artworkId, filename: file.filename, message });
 }
 
-// 标签多到放不进 JPG 时会删掉末尾的部分标签再写入，并记录提示；彻底写不进去时保存原始数据并记录。
-function withMetadata(bytes, file) {
-  if (!file.metadata) return bytes;
-  if (!PixivMetadata.detectFormat(bytes)) {
-    recordWarning(file, t("unsupportedFormat"));
-    return bytes;
+// ---- 浏览器差异 ----
+// prepare(file) 把文件准备好并返回可下载的地址 { url, warnings }；release 释放地址；releaseArchive 释放动图压缩包缓存。
+// Firefox 的后台是常驻页面，可以直接处理并创建 blob 地址；Chrome/Edge 的 service worker 不能创建 blob 地址，
+// 由 platform-chrome.js 提供基于离屏页的实现（先于本文件加载，挂在 globalThis.PixivPlatform 上）。
+const localPlatform = {
+  async prepare(file) {
+    const { blob, warnings } = await PixivPrepare.prepareFile(file);
+    return { url: URL.createObjectURL(blob), warnings };
+  },
+  async release(prepared) {
+    if (prepared) URL.revokeObjectURL(prepared.url);
+  },
+  releaseArchive(url) {
+    PixivPrepare.releaseUgoiraArchive(url);
   }
-  try {
-    const result = PixivMetadata.embedXmpDetailed(bytes, file.metadata);
-    if (result.omitted > 0) recordWarning(file, t("tagsOmitted", { count: result.omitted }));
-    return result.bytes;
-  } catch (error) {
-    recordWarning(file, error.message || String(error));
-    return bytes;
-  }
-}
+};
+const platform = globalThis.PixivPlatform || localPlatform;
 
-async function createUgoiraObjectUrl(file) {
-  const archive = await getUgoiraArchive(file.archiveUrl);
-  let blob = await PixivUgoira.convertArchiveFinal(archive, file.frames, { format: file.format, info: file.info });
-  // GIF 和 APNG 写入 XMP；压缩包的作品信息已经放在 animation.json 里。
-  if (file.metadata && file.format !== "zip") {
-    const bytes = withMetadata(new Uint8Array(await blob.arrayBuffer()), file);
-    blob = new Blob([bytes], { type: blob.type });
-  }
-  return { url: URL.createObjectURL(blob) };
-}
-
-async function releaseObjectUrl(result) {
-  if (result) URL.revokeObjectURL(result.url);
-}
-
-async function downloadUgoiraGif(file) {
+// 准备文件（动图在这一步转换）→ 交给浏览器下载 → 等保存完成 → 释放地址。
+async function downloadFile(file) {
   const previousPhase = state.phase;
-  state.phase = "converting";
-  let objectUrl;
+  if (file.kind === "ugoira") state.phase = "converting";
+  let prepared = null;
   try {
-    objectUrl = await createUgoiraObjectUrl(file);
+    prepared = await platform.prepare(file);
     state.phase = previousPhase;
+    for (const message of prepared.warnings || []) recordWarning(file, message);
     const downloadId = await queueDownload({
-      url: objectUrl.url,
+      url: prepared.url,
       filename: file.filename,
       conflictAction: "overwrite",
       saveAs: false
     });
     await waitForDownload(downloadId);
   } finally {
-    await releaseObjectUrl(objectUrl).catch(() => {});
+    state.phase = previousPhase;
+    if (prepared) await Promise.resolve(platform.release(prepared)).catch(() => {});
   }
-}
-
-// 实际收到的字节数与服务器声明的不一致，说明传输中断（有压缩编码时无法比较，跳过）。
-function checkContentLength(response, bytes, label) {
-  const headers = response.headers;
-  if (!headers || typeof headers.get !== "function" || headers.get("content-encoding")) return;
-  const declared = Number(headers.get("content-length"));
-  if (declared > 0 && declared !== bytes.length) {
-    throw taskError(t("shortRead", { label, received: bytes.length, expected: declared }), true);
-  }
-}
-
-// 先把原图取回内存并检查完整性，有问题就按可重试的下载失败处理，不会把错误页或半张图存下来。
-async function fetchImage(file) {
-  const response = await fetch(file.url, { credentials: "include", cache: "no-store" });
-  if (!response.ok) throw httpError(t("labelImage"), response.status);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  checkContentLength(response, bytes, t("labelImage"));
-  const problem = PixivMetadata.checkImage(bytes);
-  if (problem) throw taskError(problem, true);
-  return bytes;
-}
-
-// 开启元数据时插入 XMP；关闭时保存与原图完全相同的字节。都等待浏览器保存完成。
-async function downloadImage(file) {
-  const original = await fetchImage(file);
-  const bytes = file.metadata ? withMetadata(original, file) : original;
-  const url = URL.createObjectURL(new Blob([bytes], { type: PixivMetadata.mimeType(bytes) }));
-  try {
-    const downloadId = await queueDownload({
-      url,
-      filename: file.filename,
-      conflictAction: "overwrite",
-      saveAs: false
-    });
-    await waitForDownload(downloadId);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function downloadFile(file) {
-  if (file.kind === "ugoira") return downloadUgoiraGif(file);
-  return downloadImage(file);
 }
 
 function artworkMetadata(artworkId, info) {
@@ -439,7 +358,7 @@ async function processTask(task) {
       return [{ ...task, message: errorMessage(error), retriable: isRetriable(error) }];
     } finally {
       // 单独重试的动图文件用完就释放；作品内的多格式由下面统一释放。
-      if (!task.shareArchive && task.file.archiveUrl) releaseUgoiraArchive(task.file.archiveUrl);
+      if (!task.shareArchive && task.file.archiveUrl) platform.releaseArchive(task.file.archiveUrl);
     }
   }
 
@@ -462,7 +381,7 @@ async function processTask(task) {
     failed.push(...await processTask({ type: "file", id: artwork.id, file, shareArchive: true }));
     await delay(120);
   }
-  for (const file of files) if (file.archiveUrl) releaseUgoiraArchive(file.archiveUrl);
+  for (const file of files) if (file.archiveUrl) platform.releaseArchive(file.archiveUrl);
   // 失败项之后单独重试时不再共享压缩包。
   return failed.map((task) => ({ ...task, shareArchive: false }));
 }
@@ -562,12 +481,18 @@ function updateBadge() {
   }
 }
 
+// 结果和失败项交给平台保存（Chrome 的 service worker 闲置后会被关掉，重启后要能恢复）。
+function persistState() {
+  if (typeof platform.saveState === "function") platform.saveState({ state, lastFailedTasks });
+}
+
 function startState(phase) {
   state = freshState();
   state.running = true;
   state.phase = phase;
   state.startedAt = Date.now();
   updateBadge();
+  if (typeof platform.keepAlive === "function") platform.keepAlive(true);
 }
 
 function finishState() {
@@ -576,6 +501,18 @@ function finishState() {
   state.current = "";
   state.finishedAt = Date.now();
   updateBadge();
+  persistState();
+  if (typeof platform.keepAlive === "function") platform.keepAlive(false);
+}
+
+// service worker 重启后恢复上次的结果（Firefox 的后台页常驻，不需要）。
+if (typeof platform.loadState === "function") {
+  Promise.resolve(platform.loadState()).then((saved) => {
+    if (!saved || !saved.state || state.running || state.finishedAt) return;
+    state = { ...freshState(), ...saved.state, running: false };
+    lastFailedTasks = Array.isArray(saved.lastFailedTasks) ? saved.lastFailedTasks : [];
+    updateBadge();
+  }).catch(() => {});
 }
 
 async function runDownload(requestedFolderMode, overrides, embedMetadata, sizeFilter, ugoiraFormats, downloadRoot) {
@@ -648,6 +585,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!state.running) {
       state.dismissed = true;
       updateBadge();
+      persistState();
     }
     sendResponse({ ok: true, state });
     return false;

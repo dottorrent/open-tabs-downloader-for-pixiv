@@ -7,7 +7,7 @@
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
   },
-  "version": "1.15.0",
+  "version": "1.16.0",
   "permissions": [
     "tabs",
     "downloads",
@@ -23,6 +23,7 @@
       "lib.js",
       "ugoira.js",
       "metadata.js",
+      "prepare.js",
       "firefox-referer.js",
       "background.js"
     ]

@@ -103,6 +103,15 @@ node build.js public   # 只打包公开版
 - “打开下载目录”按钮调用 `downloads.showDefaultFolder()`（Android 上没有这个接口，按钮隐藏）。
 - 弹窗、规则页里显示的路径都跟随这个设置（翻译文案里用 `{root}` / `{path}` 占位）。
 
+## Chrome / Edge 版（1.16.0）
+- 同一份 `src/`，`build.js` 的 `TARGETS` 决定浏览器：firefox 输出 Manifest V2 的 `.xpi`，chrome 输出 Manifest V3 的 `.zip`（Chrome 和 Edge 通用）。`src/chrome/` 里的文件只进 Chrome 包，并放到包根目录；`firefox-referer.js` 只进 Firefox 包。
+- 后台差异通过 `background.js` 里的 `platform` 对象隔离：`prepare(file)` → `{ url, warnings }`、`release`、`releaseArchive`，以及可选的 `keepAlive` / `saveState` / `loadState`。Firefox 用本地实现（后台页直接调用 `prepare.js` 并创建 blob 地址）；Chrome 用 `platform-chrome.js`。
+- 取图、完整性检查、写元数据、动图转换都在 `prepare.js` 里，两种浏览器共用。Chrome 的 service worker 不能创建 blob 地址，所以 `prepare.js` 在离屏页 `offscreen.html` 里运行；离屏页只能用 `chrome.runtime`，界面语言随消息带过去，错误用 `serializeError` / `deserializeError` 传回，保留是否可重试。
+- Referer：declarativeNetRequest 会话规则，条件 `requestDomains: ["pximg.net"]` + `tabIds: [-1]`，只改扩展自己的请求。
+- service worker 闲置约 30 秒会被关闭：任务进行中每 20 秒调用一次 `runtime.getPlatformInfo` 保持活跃；结果和失败项存进 `storage.session`，重启后恢复。
+- Chrome 不支持 SVG 扩展图标，`src/chrome/icons/` 里是 16 / 32 / 48 / 128 的 PNG。Chrome 要求简介不超过 132 个字符。
+- 实测（Edge 156，临时配置 + DevTools 协议加载解压后的公开版）：单图、3 页作品、动图（GIF + APNG + 原始帧）共 7 个文件全部保存成功，14 秒；元数据写入、APNG/GIF 各 38 帧与原始帧一致。Edge 156 已不支持 `--load-extension` 命令行参数，测试改用 DevTools 的 `Extensions.loadUnpacked`（需 `--enable-unsafe-extension-debugging`）。
+
 ## 签名与发布
 - `dist/` 里的 xpi 未签名。正式版 Firefox 只能通过 `about:debugging` 临时加载；Firefox Developer Edition / Nightly 把 `xpinstall.signatures.required` 设为 false 后可以直接安装。
 - 公开版在 addons.mozilla.org 以“在本站上”（listed）方式提交；私人版以“自行分发”（unlisted）方式签名。两个版本 ID 不同，各自在自己的条目下上传新版本。
